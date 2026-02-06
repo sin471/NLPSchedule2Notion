@@ -1,0 +1,72 @@
+# 学会プログラム設定ファイル（サンプル）
+# このファイルを config.yaml にコピーして使用してください
+# 複数の学会設定を管理できます
+
+# 使用する学会設定を指定（キー名）
+active_conference: nlp2026
+
+# 学会設定
+conferences:
+  nlp2026:
+    name: "言語処理学会第31回年次大会（NLP2026）"
+    url: "https://www.anlp.jp/proceedings/annual_meeting/2026/"
+    year: 2026
+    parser_class: "NLP2026Parser"  # 使用するパーサークラス名
+    
+    # HTML構造のセレクタ設定
+    selectors:
+      # セッションコンテナ（複数指定可能、カンマ区切り）
+      sessions: "div.session1, div.session2"
+      # セッションヘッダー
+      session_header: "div.session_header"
+      # セッションタイトル
+      session_title: "span.session_title"
+      # プログラムテーブル
+      table: "table"
+    
+    # テーブル構造設定
+    table_structure:
+      # ID/タイトル行のカラム番号（0始まり）
+      id_column: 0
+      title_column: 1
+      # 著者行のオフセット（通常は次の行なので1）
+      author_row_offset: 1
+    
+    # 日時パース設定
+    date_parsing:
+      # 日時パターン（正規表現）
+      # グループ: (月) (日) (開始時) (開始分) (終了時) (終了分)
+      pattern: '(\d+)/(\d+)\s*\([月火水木金土日]\)\s*(\d+):(\d+)[-~](\d+):(\d+)'
+      # 会場パターン
+      venue_pattern: '([A-Z]会場)'
+    
+    # クリーンアップ設定
+    cleanup:
+      # 著者情報から削除する記号
+      remove_symbols: ["○", "◊", "💻", "J"]
+
+  # 他の学会設定例（コメントアウトしたテンプレート）
+  # 新しい学会を追加する場合は以下を参考にしてください
+  # example_conference:
+  #   name: "サンプル学会"
+  #   url: "https://example.com/program/"
+  #   year: 2026
+  #   parser_class: "ExampleParser"  # 対応するパーサークラスを作成する必要があります
+  #   
+  #   selectors:
+  #     sessions: "div.session"
+  #     session_header: "h2.header"
+  #     session_title: "span.title"
+  #     table: "table.program"
+  #   
+  #   table_structure:
+  #     id_column: 0
+  #     title_column: 1
+  #     author_row_offset: 1
+  #   
+  #   date_parsing:
+  #     pattern: '(\d+)/(\d+)\s*\(.\)\s*(\d+):(\d+)-(\d+):(\d+)'
+  #     venue_pattern: '第(\d+)会場'
+  #   
+  #   cleanup:
+  #     remove_symbols: ["*", "◎"]

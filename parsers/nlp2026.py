@@ -119,10 +119,10 @@ class NLP2026Parser(BaseConferenceParser):
 
             year = self.config.get("year", 2026)
             result["date_start"] = (
-                f"{year:04d}-{month:02d}-{day:02d}T{start_hour:02d}:{start_minute:02d}:00"
+                f"{year:04d}-{month:02d}-{day:02d}T{start_hour:02d}:{start_minute:02d}:00+09:00"
             )
             result["date_end"] = (
-                f"{year:04d}-{month:02d}-{day:02d}T{end_hour:02d}:{end_minute:02d}:00"
+                f"{year:04d}-{month:02d}-{day:02d}T{end_hour:02d}:{end_minute:02d}:00+09:00"
             )
 
         # 会場パターン

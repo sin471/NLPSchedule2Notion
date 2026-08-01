@@ -4,10 +4,11 @@ NLP2026用の具体的なパーサー実装
 
 import logging
 import re
-from datetime import datetime
 from typing import Any
 
 from bs4 import BeautifulSoup
+
+from models import Presentation
 
 from .base import BaseConferenceParser
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class NLP2026Parser(BaseConferenceParser):
     """
-    言語処理学会第31回年次大会（NLP2026）のHTML構造に特化したパーサー
+    言語処理学会年次大会（NLP 20XX）のHTML構造に特化したパーサー
 
     HTML構造の特徴:
     - セッション情報は <div class="session1"> または <div class="session2"> に格納
@@ -25,19 +26,19 @@ class NLP2026Parser(BaseConferenceParser):
     - 発表情報は <table> で2行構造（1行目：ID+タイトル、2行目：著者）
     """
 
-    def parse_program(self, soup: BeautifulSoup) -> list[dict[str, Any]]:
+    def parse_program(self, soup: BeautifulSoup) -> list[Presentation]:
         """
         NLP2026のHTML構造から全プログラムデータを抽出します。
 
         Parameters:
-        soup (BeautifulSoup): パース対象のHTMLを含むBeautifulSoupオブジェクト
+        soup (BeautifulSoup): パース対象のHTMLを含む BeautifulSoup オブジェクト
 
         Returns:
-        list[dict[str, Any]]: プログラムデータのリスト
+        list[Presentation]: 発表データのリスト
         """
-        results = []
-        selectors = self.config.get("selectors", {})
-        table_structure = self.config.get("table_structure", {})
+        results: list[Presentation] = []
+        selectors = self.parsing.get("selectors", {})
+        table_structure = self.parsing.get("table_structure", {})
 
         # セッションを取得
         sessions = soup.select(selectors.get("sessions", "div.session1, div.session2"))
@@ -73,16 +74,18 @@ class NLP2026Parser(BaseConferenceParser):
             presentations = self._parse_table(table, table_structure)
 
             # セッション情報を各発表に付与
-            for presentation in presentations:
-                presentation.update(
-                    {
-                        "session_name": session_name,
-                        "date_start": session_info["date_start"],
-                        "date_end": session_info["date_end"],
-                        "venue": session_info["venue"],
-                    }
+            for pres in presentations:
+                results.append(
+                    Presentation(
+                        id=pres["id"],
+                        title=pres["title"],
+                        authors=pres["authors"],
+                        session_name=session_name,
+                        date_start=session_info["date_start"],
+                        date_end=session_info["date_end"],
+                        venue=session_info["venue"],
+                    )
                 )
-                results.append(presentation)
 
         logger.info(f"取得したプログラム数: {len(results)}")
         return results
@@ -100,7 +103,7 @@ class NLP2026Parser(BaseConferenceParser):
             - date_end: 終了日時 ISO形式 (str | None)
             - venue: 会場 (str)
         """
-        date_parsing = self.config.get("date_parsing", {})
+        date_parsing = self.parsing.get("date_parsing", {})
         result = {"date_start": None, "date_end": None, "venue": ""}
 
         # 日時パターンマッチング
@@ -142,7 +145,7 @@ class NLP2026Parser(BaseConferenceParser):
         table_structure (dict): テーブル構造の設定
 
         Returns:
-        list[dict[str, Any]]: 発表情報のリスト
+        list[dict[str, Any]]: 発表情報のリスト（id, title, authors）
         """
         results = []
         rows = table.find_all("tr")

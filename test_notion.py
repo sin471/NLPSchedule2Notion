@@ -1,18 +1,20 @@
 """
 Notion API投稿のテストスクリプト。
 
-最初の5件のみをNotionに登録してテストします。
+最初の5件のみを Notion に登録してテストします。
+
+  uv run python test_notion.py [--conference <id>]
 """
 
+import argparse
 import logging
-import os
 import time
-from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
-from main import DATABASE_ID, get_program_data, headers
+from main import parse_programs
+from notion_writer import NOTION_API_URL, NotionWriter
 
 # ロギング設定
 logging.basicConfig(
@@ -21,29 +23,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def add_to_notion(data):
-    """
-    Notionデータベースにデータを追加します。
-
-    Parameters:
-    data (dict): 追加するデータ（id, title, authorsを含む）
-
-    Returns:
-    tuple: (成功フラグ, ステータスコード, レスポンステキスト)
-    """
-    url = "https://api.notion.com/v1/pages"
+def add_to_notion(writer: NotionWriter, pres):
+    """1件を同期的に登録します。戻り値: (成功フラグ, ステータスコード, メッセージ)"""
     payload = {
-        "parent": {"database_id": DATABASE_ID},
-        "properties": {
-            "タイトル": {"title": [{"text": {"content": data["title"]}}]},
-            "ID": {"rich_text": [{"text": {"content": data["id"]}}]},
-            "著者": {"rich_text": [{"text": {"content": data["authors"]}}]},
-            "ステータス": {"select": {"name": "未確認"}},
-        },
+        "parent": {"database_id": writer.database_id},
+        "properties": writer.build_properties(pres),
     }
-
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = requests.post(
+            NOTION_API_URL, json=payload, headers=writer.headers, timeout=30
+        )
         response.raise_for_status()
         return True, response.status_code, "成功"
     except requests.exceptions.RequestException as e:
@@ -54,32 +43,22 @@ def add_to_notion(data):
 
 
 def main():
-    """メイン処理"""
+    load_dotenv()
+    arg_parser = argparse.ArgumentParser(description="Notion登録のテスト（先頭5件）")
+    arg_parser.add_argument("--conference", help="対象の学会ID")
+    args = arg_parser.parse_args()
+
     try:
-        # 環境変数のチェック
-        load_dotenv()
-        notion_token = os.getenv("NOTION_TOKEN")
-        database_id = os.getenv("DATABASE_ID")
-
-        if not notion_token or not database_id:
-            logger.error(
-                "環境変数が設定されていません。.envファイルを確認してください。"
-            )
-            logger.error(f"NOTION_TOKEN: {'設定済み' if notion_token else '未設定'}")
-            logger.error(f"DATABASE_ID: {'設定済み' if database_id else '未設定'}")
-            return
-
         logger.info("Notion API投稿のテストを開始します")
-        logger.info(f"DATABASE_ID: {database_id}")
 
-        # データを取得
-        programs = get_program_data(use_local_file=True)
+        _, conf, programs = parse_programs(args.conference, use_local=True)
+        writer = NotionWriter(conf)
+        logger.info(f"DATABASE_ID: {writer.database_id}")
 
-        # 最初の5件のみをテスト
-        test_count = 5
+        test_count = min(5, len(programs))
         test_programs = programs[:test_count]
 
-        logger.info(f"\n最初の{test_count}件をNotionに登録します...")
+        logger.info(f"\n最初の{test_count}件を Notion に登録します...")
         logger.info("=" * 60)
 
         success_count = 0
@@ -87,11 +66,11 @@ def main():
 
         for i, prog in enumerate(test_programs, 1):
             logger.info(f"\n[{i}/{test_count}]")
-            logger.info(f"  ID: {prog['id']}")
-            logger.info(f"  タイトル: {prog['title'][:50]}...")
-            logger.info(f"  著者: {prog['authors'][:50]}...")
+            logger.info(f"  ID: {prog.id}")
+            logger.info(f"  タイトル: {prog.title[:50]}...")
+            logger.info(f"  著者: {prog.authors[:50]}...")
 
-            success, status_code, message = add_to_notion(prog)
+            success, status_code, message = add_to_notion(writer, prog)
 
             if success:
                 success_count += 1
@@ -100,7 +79,6 @@ def main():
                 fail_count += 1
                 logger.error(f"  ✗ 登録失敗: {message}")
 
-            # API制限対策
             if i < test_count:
                 time.sleep(0.35)
 
@@ -111,16 +89,12 @@ def main():
         if success_count == test_count:
             logger.info("\n✓ すべてのテストが成功しました！")
             logger.info("本番実行する場合は以下のコマンドを実行してください：")
-            logger.info("  uv run main.py")
+            logger.info("  uv run python main.py")
         else:
             logger.warning("\n⚠ エラーが発生しました。以下を確認してください：")
-            logger.warning("  1. .envファイルのNOTION_TOKENが正しいか")
-            logger.warning("  2. DATABASE_IDが正しいか")
-            logger.warning("  3. Notionデータベースのプロパティ名が正しいか")
-            logger.warning("     - タイトル (Title型)")
-            logger.warning("     - ID (Rich Text型)")
-            logger.warning("     - 著者 (Rich Text型)")
-            logger.warning("     - ステータス (Select型、選択肢に「未確認」が必要)")
+            logger.warning("  1. .env の NOTION_TOKEN が正しいか")
+            logger.warning("  2. 登録先データベースID（config の notion.database_id_env / DATABASE_ID）が正しいか")
+            logger.warning("  3. Notionデータベースのプロパティ名が property_map と一致しているか")
             logger.warning("  4. Notion統合がデータベースに接続されているか")
 
     except Exception as e:

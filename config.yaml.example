@@ -1,72 +1,101 @@
 # 学会プログラム設定ファイル（サンプル）
-# このファイルを config.yaml にコピーして使用してください
-# 複数の学会設定を管理できます
+# このファイルを config.yaml にコピーして使用してください。
+# 複数の学会設定を管理でき、active_conference または CLI の --conference で切り替えます。
 
-# 使用する学会設定を指定（キー名）
-active_conference: nlp2026
+# 使用する学会設定（キー名）。--conference で上書き可能。
+active_conference: yans2026
 
-# 学会設定
 conferences:
+  # ─────────────────────────────────────────────────────────────
+  # NLP系（言語処理学会 年次大会）: セッションコンテナ + テーブル構造
+  # ─────────────────────────────────────────────────────────────
   nlp2026:
     name: "言語処理学会第31回年次大会（NLP2026）"
-    url: "https://www.anlp.jp/proceedings/annual_meeting/2026/"
+    parser_class: "NLP2026Parser"
     year: 2026
-    parser_class: "NLP2026Parser"  # 使用するパーサークラス名
-    
-    # HTML構造のセレクタ設定
-    selectors:
-      # セッションコンテナ（複数指定可能、カンマ区切り）
-      sessions: "div.session1, div.session2"
-      # セッションヘッダー
-      session_header: "div.session_header"
-      # セッションタイトル
-      session_title: "span.session_title"
-      # プログラムテーブル
-      table: "table"
-    
-    # テーブル構造設定
-    table_structure:
-      # ID/タイトル行のカラム番号（0始まり）
-      id_column: 0
-      title_column: 1
-      # 著者行のオフセット（通常は次の行なので1）
-      author_row_offset: 1
-    
-    # 日時パース設定
-    date_parsing:
-      # 日時パターン（正規表現）
-      # グループ: (月) (日) (開始時) (開始分) (終了時) (終了分)
-      pattern: '(\d+)/(\d+)\s*\([月火水木金土日]\)\s*(\d+):(\d+)[-~](\d+):(\d+)'
-      # 会場パターン
-      venue_pattern: '([A-Z]会場)'
-    
-    # クリーンアップ設定
-    cleanup:
-      # 著者情報から削除する記号
-      remove_symbols: ["○", "◊", "💻", "J"]
 
-  # 他の学会設定例（コメントアウトしたテンプレート）
-  # 新しい学会を追加する場合は以下を参考にしてください
-  # example_conference:
-  #   name: "サンプル学会"
-  #   url: "https://example.com/program/"
-  #   year: 2026
-  #   parser_class: "ExampleParser"  # 対応するパーサークラスを作成する必要があります
-  #   
-  #   selectors:
-  #     sessions: "div.session"
-  #     session_header: "h2.header"
-  #     session_title: "span.title"
-  #     table: "table.program"
-  #   
-  #   table_structure:
-  #     id_column: 0
-  #     title_column: 1
-  #     author_row_offset: 1
-  #   
-  #   date_parsing:
-  #     pattern: '(\d+)/(\d+)\s*\(.\)\s*(\d+):(\d+)-(\d+):(\d+)'
-  #     venue_pattern: '第(\d+)会場'
-  #   
-  #   cleanup:
-  #     remove_symbols: ["*", "◎"]
+    # HTMLの取得元
+    source:
+      url: "https://www.anlp.jp/proceedings/annual_meeting/2026/"
+      local_file: "html/nlp2026_program.html"
+      use_local: true   # main.py --no-local でURL取得に切替可能
+
+    # パーサー固有の設定（NLP2026Parser が解釈）
+    parsing:
+      selectors:
+        sessions: "div.session1, div.session2"
+        session_header: "div.session_header"
+        session_title: "span.session_title"
+        table: "table"
+      table_structure:
+        id_column: 0
+        title_column: 1
+        author_row_offset: 1
+      date_parsing:
+        # グループ: (月)(日)(開始時)(開始分)(終了時)(終了分)
+        pattern: '(\d+)/(\d+)\s*\([月火水木金土日]\)\s*(\d+):(\d+)[-~](\d+):(\d+)'
+        venue_pattern: '([A-Z]会場)'
+      cleanup:
+        remove_symbols: ["○", "◊", "💻", "J"]
+
+    # Notion登録設定
+    notion:
+      # 登録先DB: database_id を直接指定、または database_id_env で環境変数名を指定。
+      # いずれも無ければ環境変数 DATABASE_ID にフォールバック。
+      database_id_env: "NLP_DATABASE_ID"
+      # Presentation の各項目 → Notion プロパティ名/型 の対応
+      property_map:
+        title:        { name: "タイトル",   type: title }
+        id:           { name: "ID",         type: rich_text }
+        authors:      { name: "著者",       type: rich_text }
+        session_name: { name: "セッション", type: rich_text }
+        venue:        { name: "会場",       type: rich_text }
+        date:         { name: "日時",       type: date }
+
+  # ─────────────────────────────────────────────────────────────
+  # YANS（言語処理若手シンポジウム）: はてなブログ形式の文書順フラット構造
+  # ─────────────────────────────────────────────────────────────
+  yans2026:
+    name: "第21回言語処理若手シンポジウム（YANS2026）"
+    parser_class: "YANS2026Parser"
+    year: 2026
+
+    source:
+      url: "https://yans.anlp.jp/entry/yans2026program"
+      local_file: "html/yans2026_program.html"
+      use_local: true
+
+    # パーサー固有の設定（YANS2026Parser が解釈）
+    parsing:
+      root: ".entry-content"        # 本文ルート
+      day_header: "h2"              # 日付・会場
+      slot_header: "h3"             # 時間帯・セッション名
+      entry_list: "ul"             # 発表リスト
+      # 発表対象とみなす slot（正規表現）。マッチしない slot 直後のリストは無視。
+      session_filter: 'ポスターセッション|招待ポスター'
+      date_pattern: '(\d+)/(\d+)\s*\([月火水木金土日]\)'
+      venue_pattern: '(展示室[\d・]+)'
+      time_pattern: '\[(\d+):(\d+)-(\d+):(\d+)\]'
+      id_title_pattern: '^\[([^\]]+)\]\s*(.+)$'
+      cleanup:
+        remove_symbols: []
+
+    notion:
+      database_id_env: "YANS_DATABASE_ID"
+      # NLPと同じ6列（登録先DBは分離しても同一スキーマ）
+      property_map:
+        title:        { name: "タイトル",   type: title }
+        id:           { name: "ID",         type: rich_text }
+        authors:      { name: "著者",       type: rich_text }
+        session_name: { name: "セッション", type: rich_text }
+        venue:        { name: "会場",       type: rich_text }
+        date:         { name: "日時",       type: date }
+
+# ─────────────────────────────────────────────────────────────
+# 新しい学会を追加する手順:
+#   1. parsers/ に新しいパーサークラスを作成し BaseConferenceParser を継承
+#   2. parse_program(soup) -> list[Presentation] を実装
+#   3. parsers/factory.py の _import_parsers() に登録
+#   4. ここに conferences.<id> 設定（source / parsing / notion）を追加
+# 既存パーサーで済む場合は 4 のみでOK。
+# ─────────────────────────────────────────────────────────────

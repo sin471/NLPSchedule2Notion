@@ -2,12 +2,14 @@
 パース処理のテストスクリプト。
 
 Notionに登録せずに、HTMLから正しくデータが抽出できるか確認します。
+
+  uv run python test_parse.py [--conference <id>]
 """
 
+import argparse
 import logging
-from pathlib import Path
 
-from main import get_program_data
+from main import parse_programs
 
 # ロギング設定
 logging.basicConfig(
@@ -17,12 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    """メイン処理"""
+    parser = argparse.ArgumentParser(description="プログラム抽出のテスト")
+    parser.add_argument("--conference", help="対象の学会ID")
+    args = parser.parse_args()
+
     try:
         logger.info("プログラムデータの抽出テストを開始します")
 
-        # データを取得
-        programs = get_program_data(use_local_file=True)
+        _, _, programs = parse_programs(args.conference, use_local=True)
 
         logger.info(f"\n{'='*60}")
         logger.info(f"取得した発表数: {len(programs)}件")
@@ -32,26 +36,26 @@ def main():
         logger.info("最初の10件を表示:")
         for i, prog in enumerate(programs[:10], 1):
             logger.info(f"\n[{i}]")
-            logger.info(f"  ID: {prog['id']}")
-            logger.info(f"  タイトル: {prog['title']}")
-            logger.info(f"  著者: {prog['authors']}")
-            logger.info(f"  セッション: {prog['session_name']}")
-            logger.info(f"  日時: {prog['date_start']} → {prog['date_end']}")
-            logger.info(f"  会場: {prog['venue']}")
+            logger.info(f"  ID: {prog.id}")
+            logger.info(f"  タイトル: {prog.title}")
+            logger.info(f"  著者: {prog.authors}")
+            logger.info(f"  セッション: {prog.session_name}")
+            logger.info(f"  日時: {prog.date_start} → {prog.date_end}")
+            logger.info(f"  会場: {prog.venue}")
 
         # 統計情報
         logger.info(f"\n{'='*60}")
         logger.info("統計情報:")
         logger.info(f"  総発表数: {len(programs)}件")
 
-        # セッションごとの集計
-        sessions = {}
+        # セッションプレフィックスごとの集計
+        sessions: dict[str, int] = {}
         for prog in programs:
-            session_prefix = prog["id"].split("-")[0] if "-" in prog["id"] else "その他"
-            sessions[session_prefix] = sessions.get(session_prefix, 0) + 1
+            prefix = prog.id.split("-")[0] if "-" in prog.id else "その他"
+            sessions[prefix] = sessions.get(prefix, 0) + 1
 
-        logger.info(f"  セッション数: {len(sessions)}セッション")
-        logger.info("\n  セッションごとの発表数:")
+        logger.info(f"  セッション数: {len(sessions)}")
+        logger.info("\n  IDプレフィックスごとの発表数:")
         for session, count in sorted(sessions.items()):
             logger.info(f"    {session}: {count}件")
 
@@ -60,14 +64,14 @@ def main():
         # エラーチェック
         errors = []
         for prog in programs:
-            if not prog["title"]:
-                errors.append(f"タイトルが空: ID={prog['id']}")
-            if not prog["authors"]:
-                errors.append(f"著者が空: ID={prog['id']}, タイトル={prog['title']}")
+            if not prog.title:
+                errors.append(f"タイトルが空: ID={prog.id}")
+            if not prog.authors:
+                errors.append(f"著者が空: ID={prog.id}, タイトル={prog.title}")
 
         if errors:
             logger.warning(f"\n警告: {len(errors)}件のエラーが見つかりました:")
-            for error in errors[:5]:  # 最初の5件のみ表示
+            for error in errors[:5]:
                 logger.warning(f"  {error}")
             if len(errors) > 5:
                 logger.warning(f"  ... 他 {len(errors) - 5}件")

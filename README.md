@@ -2,46 +2,45 @@
 
 学会プログラムのWebページから発表情報を抽出し、Notionデータベースに一括登録するツールです。
 
+現在は以下の学会に対応しています。学会ごとに構造が大きく異なっても、パーサークラスを
+差し替えるだけで対応できる設計になっています。
+
+- **NLP系（言語処理学会 年次大会, NLP 20XX）** … セッションコンテナ + テーブル構造
+- **YANS（言語処理若手シンポジウム）** … はてなブログ形式の文書順フラット構造
+
 ## 特徴
 
-- **汎用設計**: 抽象基底クラスによるパーサーアーキテクチャで、様々な学会に対応可能
-- **YAML設定**: 学会ごとのHTML構造やパース規則を設定ファイルで管理
-- **非同期処理**: aiohttpによる並列処理で高速登録（799件を約6分で処理）
-
-## 実行例
-
-```bash
-$ uv run python main.py
-2026-02-07 01:34:21,879 - INFO - 使用する学会設定: 言語処理学会第31回年次大会（NLP2026）
-2026-02-07 01:34:21,882 - INFO - パーサーを初期化: NLP2026Parser
-2026-02-07 01:34:21,883 - INFO - プログラムデータの取得を開始します
-2026-02-07 01:34:21,883 - INFO - ローカルHTMLファイルから読み込み: C:\Users\***\Programming\NLPSchedule2Notion\nlp2026_program.html
-2026-02-07 01:34:22,410 - INFO - 発見されたセッション数: 60
-2026-02-07 01:34:22,453 - INFO - 取得したプログラム数: 799
-2026-02-07 01:34:22,454 - INFO - Notionへの登録を開始します（799件）
-Notion登録中: 100%|████████████████████████████| 799/799 [06:33<00:00,  2.03件/s]
-2026-02-07 01:40:55,482 - INFO - 処理完了: 成功 799件, 失敗 0件 (処理時間: 393.0秒)
-```
+- **汎用アーキテクチャ**: パーサー層は正規化データ型 `Presentation` を返す共通契約。学会固有の
+  HTML構造はパーサークラスに閉じ込め、取得・登録層から独立。
+- **設定駆動**: HTML取得元（`source`）、パース規則（`parsing`）、Notionプロパティ対応
+  （`notion.property_map`）をすべて `config.yaml` で管理。
+- **学会ごとにNotion DB分離**: 学会別にデータベースIDを指定可能。
+- **非同期処理**: aiohttpによる並列処理で高速登録（799件を約6分で処理）。
 
 ## アーキテクチャ
 
-### パーサー設計
-
-本ツールは抽象基底クラス（`BaseConferenceParser`）を使用した拡張可能な設計を採用しています：
-
 ```
+models.py           # Presentation データクラス（パーサー ⇔ Notion登録 の共通契約）
+config.py           # config.yaml の読込・アクティブ学会の選択・検証
+sources.py          # プログラムHTMLの取得（ローカル/URL）と保存
+notion_writer.py    # NotionWriter: property_map からプロパティ構築＋非同期バッチ登録
 parsers/
-├── __init__.py          # パッケージ初期化
-├── base.py              # BaseConferenceParser（抽象基底クラス）
-├── nlp2026.py           # NLP2026Parser（具体的な実装）
-└── factory.py           # create_parser（ファクトリー関数）
+├── base.py         # BaseConferenceParser（抽象基底クラス）
+├── nlp2026.py      # NLP2026Parser（テーブル構造）
+├── yans2026.py     # YANS2026Parser（文書順ステートフル走査）
+└── factory.py      # create_parser（parser_class 名からインスタンス生成）
+main.py             # エントリポイント（オーケストレーション + CLI）
+fetch_html.py       # プログラムHTMLをローカル保存する開発用スクリプト
 ```
 
-新しい学会に対応する場合：
-1. `parsers/`に新しいパーサークラスを作成（例：`jsai2026.py`）
-2. `BaseConferenceParser`を継承し、`parse_program()`メソッドを実装
-3. `factory.py`にパーサーを登録
-4. `config.yaml`で`parser_class`を指定
+### 新しい学会に対応する場合
+
+1. `parsers/` に新しいパーサークラスを作成し `BaseConferenceParser` を継承
+2. `parse_program(soup) -> list[Presentation]` を実装（学会固有設定は `self.parsing` で参照）
+3. `parsers/factory.py` の `_import_parsers()` に登録
+4. `config.yaml` の `conferences.<id>` に `source` / `parsing` / `notion` を追加
+
+既存パーサーで対応できる場合は 4 のみでOKです。
 
 ## セットアップ
 
@@ -53,165 +52,141 @@ uv sync
 
 ### 2. 環境変数の設定
 
-`.env`ファイルを作成し、以下を設定：
+`.env` ファイルを作成し、以下を設定：
 
 ```env
 # Notion API設定
 NOTION_TOKEN=your_notion_token_here
-DATABASE_ID=your_database_id_here
+
+# 登録先データベース（学会ごとに分離する場合）
+NLP_DATABASE_ID=your_nlp_database_id
+YANS_DATABASE_ID=your_yans_database_id
+
+# 上記が無い場合のフォールバック
+DATABASE_ID=your_default_database_id
 ```
 
-### 3. 学会設定の作成
+登録先DBは `config.yaml` の `notion.database_id`（直接指定）→ `notion.database_id_env`
+（環境変数名）→ 環境変数 `DATABASE_ID` の順で解決されます。
 
-`config.yaml.example`をコピーして`config.yaml`を作成：
+### 3. 学会設定の作成
 
 ```bash
 cp config.yaml.example config.yaml
 ```
 
-`config.yaml`を編集して、対象の学会に合わせて設定を調整します。
+`config.yaml` を編集して、対象の学会やアクティブ学会を調整します。
 
 ## 設定ファイル（config.yaml）の構造
 
+各学会は `source` / `parsing` / `notion` の3ブロックで構成します。
+
 ```yaml
-# 使用する学会設定を指定
-active_conference: nlp2026
+active_conference: yans2026     # --conference で上書き可能
 
 conferences:
-  nlp2026:  # 学会ID（任意の識別子）
-    name: "言語処理学会第31回年次大会（NLP2026）"
-    url: "https://www.anlp.jp/proceedings/annual_meeting/2026/"
+  yans2026:
+    name: "第21回言語処理若手シンポジウム（YANS2026）"
+    parser_class: "YANS2026Parser"
     year: 2026
-    parser_class: "NLP2026Parser"  # 使用するパーサークラス
 
-    selectors:
-      # HTMLセレクタ（CSSセレクタ形式）
-      sessions: "div.session1, div.session2"
-      session_header: "div.session_header"
-      session_title: "span.session_title"
-      table: "table"
+    source:                     # HTML取得元
+      url: "https://yans.anlp.jp/entry/yans2026program"
+      local_file: "html/yans2026_program.html"
+      use_local: true           # main.py --no-local でURL取得に切替
 
-    table_structure:
-      # テーブルのカラム番号（0始まり）
-      id_column: 0        # 発表ID列
-      title_column: 1     # タイトル列
-      author_row_offset: 1  # 著者情報の行オフセット
+    parsing:                    # パーサー固有設定（パーサーが解釈）
+      root: ".entry-content"
+      day_header: "h2"          # 日付・会場
+      slot_header: "h3"         # 時間帯・セッション名
+      entry_list: "ul"         # 発表リスト
+      session_filter: 'ポスターセッション|招待ポスター'
+      date_pattern: '(\d+)/(\d+)\s*\([月火水木金土日]\)'
+      venue_pattern: '(展示室[\d・]+)'
+      time_pattern: '\[(\d+):(\d+)-(\d+):(\d+)\]'
+      id_title_pattern: '^\[([^\]]+)\]\s*(.+)$'
 
-    date_parsing:
-      # 日時情報を抽出する正規表現
-      pattern: "(\d+)/(\d+)\s*\([^)]+\)\s*(\d+):(\d+)-(\d+):(\d+)"
-      venue_pattern: "([A-Z]会場)"
-
-    cleanup:
-      # 著者情報からクリーンアップする記号
-      remove_symbols:
-        - "○"
-        - "◊"
-        - "💻"
-        - "J"
+    notion:
+      database_id_env: "YANS_DATABASE_ID"
+      property_map:             # Presentation の項目 → Notion プロパティ名/型
+        title:        { name: "タイトル",   type: title }
+        id:           { name: "ID",         type: rich_text }
+        authors:      { name: "著者",       type: rich_text }
+        session_name: { name: "セッション", type: rich_text }
+        venue:        { name: "会場",       type: rich_text }
+        date:         { name: "日時",       type: date }
 ```
 
-### 他の学会に対応させる方法
+NLP系（テーブル構造）の `parsing` は `selectors` / `table_structure` / `date_parsing` /
+`cleanup` を使います。詳細は `config.yaml.example` を参照してください。
 
-1. `conferences`セクションに新しい学会設定を追加
-2. `active_conference`を新しい学会IDに変更
-3. HTMLセレクタとパース設定を学会のWebページに合わせて調整
-
-例：
-```yaml
-active_conference: jsai2026
-
-conferences:
-  jsai2026:
-    name: "人工知能学会全国大会（JSAI2026）"
-    url: "https://example.com/jsai2026/"
-    year: 2026
-    # ... その他の設定
-```
+`property_map` の `type` は `title` / `rich_text` / `date` / `select` / `checkbox` に対応。
+`date` 型は `Presentation.date_start` / `date_end` を使用します。
 
 ## 使用方法
 
-### プログラムデータの取得とNotion登録
+### プログラムHTMLの取得（任意）
+
+開発時にリクエストを減らすため、事前にHTMLをローカル保存できます。
 
 ```bash
-uv run python main.py
+uv run python fetch_html.py                      # アクティブ学会
+uv run python fetch_html.py --conference yans2026 # 学会を指定
 ```
 
-実行すると以下の処理が行われます：
+### Notion登録
 
-1. 設定ファイル（`config.yaml`）から学会設定を読み込み
-2. 指定されたURLまたはローカルHTMLファイルからプログラムデータを取得
-3. HTMLをパースして発表情報を抽出
-4. Notion APIを使用してデータベースに一括登録
+```bash
+uv run python main.py                        # アクティブ学会をローカルHTMLから登録
+uv run python main.py --conference yans2026  # 学会を指定
+uv run python main.py --no-local             # URLから直接取得して登録
+uv run python main.py --dry-run              # 登録せずパース件数のみ確認
+```
+
+処理の流れ：
+
+1. `config.yaml` から学会設定を読み込み（`--conference` で上書き可）
+2. ローカルHTMLまたはURLからプログラムを取得
+3. パーサーで発表情報（`Presentation`）を抽出
+4. `NotionWriter` が `property_map` に従いプロパティを構築し、非同期一括登録
 
 ### Notionデータベースの設定
 
-Notionデータベースには以下のプロパティを作成してください：
+デフォルト設定では以下のプロパティを作成してください（`property_map` で変更可能）：
 
-| プロパティ名 | タイプ | 説明 | 必須 |
-|------------|--------|------|------|
-| タイトル | Title | 発表タイトル | ✅ |
-| ID | Text | 発表の識別子（例: P1-01） | ✅ |
-| 著者 | Text | 発表者名 | ✅ |
-| セッション | Text | セッション名 | ✅ |
-| 日時 | Date | 発表の開始・終了時刻 | ✅ |
-| 会場 | Text | 会場情報 | ✅ |
-| 興味 | Checkbox | 個人用チェック（任意） | ❌ |
+| プロパティ名 | タイプ | 説明 |
+|------------|--------|------|
+| タイトル | Title | 発表タイトル |
+| ID | Text | 発表の識別子（例: P1-01 / S1-P01） |
+| 著者 | Text | 発表者名（所属含む） |
+| セッション | Text | セッション名 |
+| 会場 | Text | 会場情報 |
+| 日時 | Date | 発表の開始・終了時刻 |
 
-**注意**: プロパティ名は上記と完全に一致させる必要があります。
-
-### 実行結果の確認
-
-処理完了後、以下の情報が表示されます：
-- 成功件数/失敗件数
-- 処理時間
-- 処理速度（件/秒）
-
-進捗バーには以下が表示されます：
-- リアルタイムの進捗率
-- 完了数/全体数
-- 経過時間と残り時間の推定
-- 処理速度
+**注意**: プロパティ名は `property_map` の `name` と完全に一致させる必要があります。
 
 ## パフォーマンス
 
 - **並列処理**: 3並列で非同期処理（Notion APIレート制限: 3req/sec）
 
-
 ## トラブルシューティング
 
-### 設定ファイルが見つからない
+- **設定ファイルが見つからない** → `config.yaml.example` を `config.yaml` にコピー。
+- **HTMLファイルが見つからない** → 先に `fetch_html.py` を実行、または `--no-local` でURL取得。
+- **発見された発表数が 0** → `parsing` のセレクタ/正規表現を対象ページの構造に合わせて調整。
+- **登録先DBが解決できない** → `notion.database_id_env` の環境変数か `DATABASE_ID` を設定。
+- **Notion登録が失敗する** → プロパティ名が `property_map` と一致しているか、統合がDBに接続されているか確認。
 
+## 開発 / テスト
+
+```bash
+# HTMLパースのテスト（Notion登録なし）
+uv run python test_parse.py --conference yans2026
+
+# Notion登録のテスト（先頭5件のみ）
+uv run python test_notion.py --conference yans2026
 ```
-エラー: config.yamlファイルが見つかりません
-```
-
-→ `config.yaml.example`をコピーして`config.yaml`を作成してください。
-
-### HTMLセレクタが一致しない
-
-```
-発見されたセッション数: 0
-```
-
-→ `config.yaml`の`selectors`セクションを確認し、対象WebページのHTML構造に合わせて調整してください。
-
-### 日時情報がパースできない
-
-→ `date_parsing.pattern`の正規表現を、対象Webページの日時フォーマットに合わせて調整してください。
 
 ## ライセンス
 
 MIT License
-
-## 開発
-
-### テスト
-
-```bash
-# HTMLパースのテスト
-uv run python test_parse.py
-
-# Notion登録のテスト
-uv run python test_notion.py
-```

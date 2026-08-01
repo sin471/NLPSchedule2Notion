@@ -1,13 +1,15 @@
 """
-NLP2026のプログラムページからHTMLを取得してローカルに保存するスクリプト。
+アクティブ学会（または --conference）のプログラムページからHTMLを取得し、
+config の source.local_file にローカル保存するスクリプト。
 
-開発時にリクエスト回数を減らすため、一度だけ実行してHTMLファイルを保存します。
+開発時にリクエスト回数を減らすため、一度だけ実行してHTMLを保存します。
 """
 
+import argparse
 import logging
-from pathlib import Path
 
-import requests
+import sources
+from config import get_active_conference, load_config
 
 # ロギング設定
 logging.basicConfig(
@@ -16,47 +18,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def fetch_and_save_html(url: str, output_path: Path) -> bool:
-    """
-    指定されたURLからHTMLを取得してファイルに保存します。
-
-    Parameters:
-    url (str): 取得するページのURL
-    output_path (Path): 保存先のファイルパス
-
-    Returns:
-    bool: 保存に成功した場合True、失敗した場合False
-    """
-    try:
-        logger.info(f"Fetching HTML from: {url}")
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-
-        # エンコーディングを自動検出
-        response.encoding = response.apparent_encoding
-
-        # HTMLをファイルに保存
-        output_path.write_text(response.text, encoding="utf-8")
-
-        logger.info(f"HTML saved to: {output_path}")
-        logger.info(f"File size: {output_path.stat().st_size} bytes")
-
-        return True
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to fetch HTML: {e}")
-        return False
-    except IOError as e:
-        logger.error(f"Failed to save HTML: {e}")
-        return False
-
-
 def main():
-    """メイン処理"""
-    url = "https://www.anlp.jp/proceedings/annual_meeting/2026/"
-    output_path = Path(__file__).parent / "nlp2026_program.html"
+    parser = argparse.ArgumentParser(description="学会プログラムHTMLを取得して保存します")
+    parser.add_argument(
+        "--conference",
+        help="対象の学会ID（config.yaml の active_conference を上書き）",
+    )
+    args = parser.parse_args()
 
-    success = fetch_and_save_html(url, output_path)
+    config = load_config()
+    conf_id, conf = get_active_conference(config, args.conference)
+    logger.info(f"対象の学会設定: {conf['name']}")
+
+    url = conf.get("source", {}).get("url")
+    if not url:
+        logger.error(f"学会設定 '{conf_id}' に source.url が指定されていません")
+        exit(1)
+
+    output_path = sources.resolve_local_path(conf_id, conf)
+    success = sources.save_html(url, output_path)
 
     if success:
         logger.info("HTML fetch completed successfully!")

@@ -75,6 +75,8 @@ def _import_parsers():
     すべてのパーサーモジュールをインポートしてレジストリに登録します。
     """
     from .nlp2026 import NLP2026Parser
+    from .yans2026 import YANS2026Parser
 
     # デコレータを使わずに手動登録
     _PARSER_REGISTRY["NLP2026Parser"] = NLP2026Parser
+    _PARSER_REGISTRY["YANS2026Parser"] = YANS2026Parser

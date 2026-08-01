@@ -52,7 +52,11 @@ uv sync
 
 ### 2. 環境変数の設定
 
-`.env` ファイルを作成し、以下を設定：
+`.env.example` をコピーして `.env` を作成し、値を設定：
+
+```bash
+cp .env.example .env
+```
 
 ```env
 # Notion API設定
@@ -64,6 +68,9 @@ YANS_DATABASE_ID=your_yans_database_id
 
 # 上記が無い場合のフォールバック
 DATABASE_ID=your_default_database_id
+
+# init_db.py でDBを自動作成する際の親ページID
+NOTION_PARENT_PAGE_ID=your_parent_page_id
 ```
 
 登録先DBは `config.yaml` の `notion.database_id`（直接指定）→ `notion.database_id_env`
@@ -76,6 +83,19 @@ cp config.yaml.example config.yaml
 ```
 
 `config.yaml` を編集して、対象の学会やアクティブ学会を調整します。
+
+### 4. Notionデータベースの作成（自動）
+
+DBスキーマは手動で作らなくても、`property_map` から自動生成できます。
+Notion連携（インテグレーション）が編集権限を持つ**親ページのID**を指定して実行します。
+
+```bash
+uv run python init_db.py --conference yans2026 --parent-page <page_id>
+```
+
+出力された `database_id` を、`.env` の該当環境変数（例: `YANS_DATABASE_ID`）に設定すれば
+そのまま登録できます（作成に使う `NOTION_TOKEN` と登録が同じインテグレーションのため権限共有は不要）。
+手動で作る場合は後述の「Notionデータベースの設定」の6プロパティを作成してください。
 
 ## 設定ファイル（config.yaml）の構造
 
@@ -124,6 +144,12 @@ NLP系（テーブル構造）の `parsing` は `selectors` / `table_structure` 
 `date` 型は `Presentation.date_start` / `date_end` を使用します。
 
 ## 使用方法
+
+### Notion DB の自動作成（初回のみ）
+
+```bash
+uv run python init_db.py --conference <id> --parent-page <page_id>
+```
 
 ### プログラムHTMLの取得（任意）
 
